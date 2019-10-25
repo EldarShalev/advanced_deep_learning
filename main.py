@@ -209,74 +209,64 @@ def sentiment_analysis_part_b(w2v_model, fc_model, songs):
         int(torch.argmin(y_pred))] + "\"" + f"{Style.RESET_ALL}")
 
 
-def visual_part(w2v_model, songs):
+def visual_part(w2v_model, songs, dict_word_by_genre, dict_genre_by_word):
     arr_3000_words = []
     array_3000_words = []
+    most_frequent_words_by_genre = defaultdict(list)
     # convert to list of strings
     # flat_list = [item for sublist in songs for item in sublist]
     word_freq = defaultdict(int)
     for sent in songs['word']:
         word_freq[sent] += 1
-    word_count = sorted(word_freq, key=word_freq.get, reverse=True)[:3000]
-    words = [w for w in word_count if not w in set(stopwords.words("english"))]
+    word_count = sorted(word_freq, key=word_freq.get, reverse=True)
+    words_without_stopwords = [w for w in word_count if not w in set(stopwords.words("english"))][:3000]
+    unwanted = set(dict_word_by_genre) - set(words_without_stopwords)
+    for unwanted_key in unwanted: del dict_word_by_genre[unwanted_key]
 
-    # for each song - song sentences
-    # example: gener - first song: 4 sentecnes
-    # word_dict = { {} }
-    # word_dict[word][genre]+=1
-    #
-    # table- ['rock']['pop'][..][]
-    # you- [10]     [20]  [..][]
-    # hi - [5]      [15] ....
+    print("Print all genres for each of the most frequent words..")
+    for word, genres in dict_word_by_genre.items():
+        print(word + " - ", end='')
+        words_occurence = sum(genres.values())
+        for attribute, value in genres.items():
+            print("{" + '{} : {}'.format(attribute, value) + " proportion {:.0%}".format(value / words_occurence) + "}",
+                  end='')
+        print("")
 
-    # arr_3000_words.append([words2list[0], word_count])
-    # for i in range(len(words2)):
-    #     word_count = model.wv.vocab[words2list[i]].count
-    #     if (len(arr_3000_words) < 3000):
-    #         if (word_count < arr_3000_words[0][1] and i > 0):
-    #             arr_3000_words.insert(0, [words2list[i], word_count])
-    #             # print (i,i)
-    #         else:
-    #             if i > 0:
-    #                 arr_3000_words.append([words2list[i], word_count])
-    #                 # print(i,i,i)
-    #     else:
-    #         if (word_count > arr_3000_words[0][1]):
-    #             arr_3000_words[0] = ([words2list[i], word_count])
-    # print(arr_3000_words[:20])
+    for genre, words in dict_genre_by_word.items():
+        most_frequent_words_by_genre[genre] = sorted(words.items(), key=lambda kv: kv[1], reverse=True)[:50]
 
-    # for i in range(len(arr_3000_words)):
-    #     array_3000_words.append(arr_3000_words[i][0])
-    # print(array_3000_words[:20])
     print("hello")
 
 
 def create_word_genre_dict(songs, songs_with_genre):
-    dict = {}
+    dict_words = defaultdict(lambda: defaultdict(int))
+    dict_genre = defaultdict(lambda: defaultdict(int))
     for (song, genre) in zip(songs, songs_with_genre):
         for word in song:
-            if genre in dict[word]:
-                dict[word][genre] += 1
-            else:
-                dict[word][genre] = 0
-    print("hello")
-    # songs_with_genre: pop
-    # songs_with_genre: pop
+            dict_words[word][genre] += 1
+            dict_genre[genre][word] += 1
+
+    return dict_words, dict_genre
 
 
 def main():
     # nltk.download()
     songs = parsing_data()
-    songs_with_genre = parsing_data(genre=True)
-    create_word_genre_dict(songs, songs_with_genre)
+    genre_of_songs = parsing_data(genre=True)
+    dict_word_by_genre, dict_genre_by_word = create_word_genre_dict(songs, genre_of_songs)
 
-    flat_list = [item for sublist in songs for item in sublist]
+    # If we want to save :
+    # flat_list = [item for sublist in songs for item in sublist]
     # np.savetxt("songs.csv", flat_list, delimiter=",", fmt='%s', header='word', comments='')
     # np.savetxt("genres.csv", songs_with_genre, delimiter=",", fmt='%s', header='word', comments='')
+
+    # If we want to train the model again
     # model = train_model(songs)
 
-    songs = pd.read_csv('file_name.csv')
-    songs_with_genre = pd.read_csv('file_name.csv')
+    # If we want to load :
+    songs = pd.read_csv('songs.csv')
+    # songs_with_genre = pd.read_csv('file_name.csv')
+
     w2v_model = load_model("300features_40minwords_10context")
     x, y = sentiment_analysis_part_a(w2v_model)
     # Test No.1 - linear regression
@@ -290,7 +280,7 @@ def main():
     fc_model = create_fc_model(x, y)
     # sentiment_analysis_part_b(w2v_model, fc_model, songs)
 
-    visual_part(w2v_model, songs)
+    visual_part(w2v_model, songs, dict_word_by_genre, dict_genre_by_word)
 
     print("hello")
 
