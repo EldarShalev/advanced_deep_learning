@@ -1,7 +1,9 @@
 import gensim
+import matplotlib
 import pandas as pd
 import sys
 import nltk
+from docutils.nodes import inline
 from nltk.corpus import stopwords
 from nltk.stem import PorterStemmer
 from nltk.stem import WordNetLemmatizer
@@ -22,6 +24,13 @@ from colorama import Fore
 from colorama import Style
 from collections import defaultdict
 from gensim.models.phrases import Phrases, Phraser
+import matplotlib.pyplot as plt
+import seaborn as sns
+import random
+
+sns.set_style("darkgrid")
+from sklearn.decomposition import PCA
+from sklearn.manifold import TSNE
 
 wordnet_lemmatizer = WordNetLemmatizer()
 ps = PorterStemmer()
@@ -209,9 +218,47 @@ def sentiment_analysis_part_b(w2v_model, fc_model, songs):
         int(torch.argmin(y_pred))] + "\"" + f"{Style.RESET_ALL}")
 
 
+def display_2D_results(w2v_model, most_frequent_words_by_genre):
+    number_of_colors = len(most_frequent_words_by_genre)
+
+    color = ["#" + ''.join([random.choice('0123456789ABCDEF') for j in range(6)])
+             for i in range(number_of_colors)]
+    print(color)
+
+    color_list = []
+    arrays = np.zeros((0, 300), dtype='f')
+    for counter, (genre, words) in enumerate(most_frequent_words_by_genre.items()):
+        for word in words:
+            try:
+                vec_word = [w2v_model[word[0]]]
+                color_list.append(color[counter])
+                arrays = np.append(arrays, vec_word, axis=0)
+            except:
+                print("'", word[0], "'", "does not appear in the model")
+
+    reduce = PCA(n_components=50).fit_transform(arrays)
+
+    # Finds t-SNE coordinates for 2 dimensions
+    np.set_printoptions(suppress=True)
+
+    Y = TSNE(n_components=2, random_state=0, perplexity=15).fit_transform(reduce)
+
+    # Sets everything up to plot
+    df = pd.DataFrame({'x': [x for x in Y[:, 0]],
+                       'y': [y for y in Y[:, 1]],
+                       'color': color_list})
+
+    fig, _ = plt.subplots()
+    fig.set_size_inches(9, 9)
+    sns.regplot(data=df, x="x", y="y", fit_reg=False, marker="o", scatter_kws={'facecolors': df['color']})
+
+    plt.xlim(Y[:, 0].min() - 10, Y[:, 0].max() + 10)
+    plt.ylim(Y[:, 1].min() - 10, Y[:, 1].max() + 10)
+    plt.show()
+    print("hello")
+
+
 def visual_part(w2v_model, songs, dict_word_by_genre, dict_genre_by_word):
-    arr_3000_words = []
-    array_3000_words = []
     most_frequent_words_by_genre = defaultdict(list)
     # convert to list of strings
     # flat_list = [item for sublist in songs for item in sublist]
@@ -235,7 +282,7 @@ def visual_part(w2v_model, songs, dict_word_by_genre, dict_genre_by_word):
     for genre, words in dict_genre_by_word.items():
         most_frequent_words_by_genre[genre] = sorted(words.items(), key=lambda kv: kv[1], reverse=True)[:50]
 
-    print("hello")
+    display_2D_results(w2v_model, most_frequent_words_by_genre)
 
 
 def create_word_genre_dict(songs, songs_with_genre):
@@ -279,7 +326,6 @@ def main():
     print("Fully Connected test has started..")
     fc_model = create_fc_model(x, y)
     # sentiment_analysis_part_b(w2v_model, fc_model, songs)
-
     visual_part(w2v_model, songs, dict_word_by_genre, dict_genre_by_word)
 
     print("hello")
