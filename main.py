@@ -12,6 +12,13 @@ from sklearn.model_selection import train_test_split
 from sklearn.linear_model import LinearRegression
 from sklearn.metrics import mean_squared_error
 from sklearn.neural_network import MLPRegressor
+from sklearn import preprocessing
+from sklearn.naive_bayes import MultinomialNB
+from sklearn.metrics import confusion_matrix
+from sklearn.metrics import classification_report
+from sklearn.preprocessing import StandardScaler
+from sklearn.neural_network import MLPClassifier
+
 import torch
 import torch.nn as nn
 import logging
@@ -58,10 +65,10 @@ def get_single_song_sentences(song, tokenizer, remove_stop_words=False, genre_bo
     return genre_type
 
 
-def parsing_data(genre=False):
-    data_set = pd.read_csv("lyrics.csv")
+def parsing_data(data_set, genre=False):
     num_of_lyrics = data_set["lyrics"].size
     songs = []
+    # TODO : change size
     num_of_data = 1000
     if not genre:
         for i in range(0, num_of_data):
@@ -255,7 +262,6 @@ def display_2D_results(w2v_model, most_frequent_words_by_genre):
     plt.xlim(Y[:, 0].min() - 10, Y[:, 0].max() + 10)
     plt.ylim(Y[:, 1].min() - 10, Y[:, 1].max() + 10)
     plt.show()
-    print("hello")
 
 
 def visual_part(w2v_model, songs, dict_word_by_genre, dict_genre_by_word):
@@ -296,10 +302,116 @@ def create_word_genre_dict(songs, songs_with_genre):
     return dict_words, dict_genre
 
 
+def clean_text(dataX, dataY):
+    cleared_songs_x = []
+    cleared_songs_y = []
+    # TODO : change size
+    for i, val in enumerate(dataX[:200]):
+        # Call our function for each one, and add the result to the list of clean reviews
+        if ((i + 1) % 10000 == 0):
+            print("Lyrics %d of %d\n" % (i + 1, dataX.size))
+        if not (type(val) == float):
+            song_lyrics_by_sentences = get_single_song_sentences(val, tokenizer, remove_stop_words=True)
+            flat_list = [item for sublist in song_lyrics_by_sentences for item in sublist]
+            cleared_songs_x.append(" ".join(flat_list))
+            cleared_songs_y.append(dataY[i])
+    return cleared_songs_x, cleared_songs_y
+
+
+def vectorize_features(X, vectorizer, fit=True):
+    # fit_transform() does two functions: First, it fits the model
+    # and learns the vocabulary; second, it transforms our training data
+    # into feature vectors. The input to fit_transform should be a list of
+    # strings.
+    if fit:
+        features = vectorizer.fit(X)
+    features = vectorizer.transform(X)
+
+    # Numpy arrays are easy to work with, so convert the result to an
+    # array
+    features = features.toarray()
+    return features
+
+
+def text_classification_bow(cleared_songs_train, cleared_songs_test, vectorizer, cleared_y_train, cleared_y_test,
+                            classes):
+    X_train_bows = vectorize_features(cleared_songs_train, vectorizer)
+    X_test_bows = vectorize_features(cleared_songs_test, vectorizer, fit=False)
+    nbc = MultinomialNB()
+
+    nbc.fit(X_train_bows, cleared_y_train)
+    y_pred = nbc.predict(X_test_bows)
+    print(confusion_matrix(cleared_y_test, y_pred))
+    print(classification_report(cleared_y_test, y_pred, target_names=classes))
+
+
+def get_mean_vector(word2vec_model, sentences):
+    avg_vectors = []
+    # remove out-of-vocabulary words
+    for words in sentences:
+        flat_list = [word for word in words.split() if word in word2vec_model.wv.vocab]
+        if len(flat_list) >= 1:
+            avg_vectors.append(np.mean(word2vec_model[flat_list], axis=0))
+
+    return avg_vectors
+
+
+def text_classification_avg_vec(w2v_model, cleared_songs_train, cleared_songs_test,cleared_y_train, cleared_y_test, classes):
+    X_train_avg_vc = get_mean_vector(w2v_model, cleared_songs_train)
+    X_test_avg_vc = get_mean_vector(w2v_model, cleared_songs_test)
+    scaler = StandardScaler()
+    scaler.fit(X_train_avg_vc)
+    X_train_avg_vc_scaled = scaler.transform(X_train_avg_vc)
+    # apply same transformation to test data
+    X_test_avg_vc_scaled = scaler.transform(X_test_avg_vc)
+
+    clf = MLPClassifier(hidden_layer_sizes=(50,))
+    clf.fit(X_train_avg_vc_scaled, cleared_y_train)
+
+    y_pred = clf.predict(X_test_avg_vc_scaled)
+    print(confusion_matrix(cleared_y_test, y_pred))
+    print(classification_report(cleared_y_test, y_pred, target_names=classes))
+
+
+def text_classification_part(data_set, w2v_model):
+    data_set = data_set[data_set["genre"] != "Not Available"]
+    data_set = data_set[data_set["genre"].notnull()]
+    data_set['genre'].value_counts().plot.bar()
+    # plt.show()
+
+    genres_to_numbers = preprocessing.LabelEncoder()
+    # Converting string labels into numbers.
+    genres_encoded = genres_to_numbers.fit_transform(data_set["genre"].tolist())
+
+    # show classes to index
+    classes = list(genres_to_numbers.classes_)
+    # codes = genres_to_numbers.transform(list(genres_to_numbers.classes_))
+    # for clss, code in zip(classes, codes):
+    #     print(clss, code)
+
+    X_train, X_test, y_train, y_test = train_test_split(data_set["lyrics"], genres_encoded, test_size=0.2,
+                                                        random_state=1)
+
+    X_train, X_val, y_train, y_val = train_test_split(X_train, y_train, test_size=0.2, random_state=1)
+
+    cleared_songs_train, cleared_y_train = clean_text(X_train, y_train)
+    cleared_songs_test, cleared_y_test = clean_text(X_test, y_test)
+
+    vectorizer = CountVectorizer(analyzer="word", tokenizer=None, preprocessor=None, stop_words=None,
+                                 max_features=15000)
+
+    # text_classification_bow(cleared_songs_train, cleared_songs_test, vectorizer, cleared_y_train, cleared_y_test,
+    #                         classes)
+    text_classification_avg_vec(w2v_model, cleared_songs_train, cleared_songs_test, cleared_y_train,cleared_y_test, classes)
+
+    print("hello")
+
+
 def main():
     # nltk.download()
-    songs = parsing_data()
-    genre_of_songs = parsing_data(genre=True)
+    data_set = pd.read_csv("lyrics.csv")
+    songs = parsing_data(data_set)
+    genre_of_songs = parsing_data(data_set, genre=True)
     dict_word_by_genre, dict_genre_by_word = create_word_genre_dict(songs, genre_of_songs)
 
     # If we want to save :
@@ -315,7 +427,7 @@ def main():
     # songs_with_genre = pd.read_csv('file_name.csv')
 
     w2v_model = load_model("300features_40minwords_10context")
-    x, y = sentiment_analysis_part_a(w2v_model)
+    # x, y = sentiment_analysis_part_a(w2v_model)
     # Test No.1 - linear regression
     print("Linear regression test has started..")
     # regression_test(x, y, LinearRegression())
@@ -324,10 +436,10 @@ def main():
     # regression_test(x, y, MLPRegressor())
     # Test No.3 - Using fully connected
     print("Fully Connected test has started..")
-    fc_model = create_fc_model(x, y)
+    # fc_model = create_fc_model(x, y)
     # sentiment_analysis_part_b(w2v_model, fc_model, songs)
-    visual_part(w2v_model, songs, dict_word_by_genre, dict_genre_by_word)
-
+    # visual_part(w2v_model, songs, dict_word_by_genre, dict_genre_by_word)
+    text_classification_part(data_set, w2v_model)
     print("hello")
 
 
